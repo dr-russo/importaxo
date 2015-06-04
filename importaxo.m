@@ -21,7 +21,8 @@ function [data, time, meta] = importaxo(filename)
 
 %================================= Main ========================================
 
-if nargin < 1  %If no filename provided, open dialog to select file
+%If no filename provided, open dialog to select file
+if nargin < 1 
     [fn, pn] = uigetfile({'*.axgd;*.axgx','Axograph Files (.axgx,.axgd)';...
                           '*.*','All Files'}, ...
                           'Choose Axograph File to Import', ...
@@ -104,7 +105,7 @@ meta.XColType   = fread(fid,1,'int32');
 meta.XTitleLen  = fread(fid,1,'int32');
 meta.XTitle		= readtitle(fid,meta.XTitleLen);
 meta.SampInt    = fread(fid,1,'double');
-meta.SampInt2   = fread(fid,1,'double'); %Redundant in data file 
+meta.SampInt2   = fread(fid,1,'double'); %Redundant in data file (2nd channel?)
 
 data		  = cell(meta.NDatCol-1,1);
 [data{:}]	  = deal(double(zeros(1,meta.nPoints)));
@@ -139,27 +140,33 @@ for n = 1:(meta.NDatCol-1)
         end
 end
 
-    %Acquisition settings - from additional ~2650 bytes
-    ft = fread(fid,2650,'*char')';
-    ft = ft(~mod(3:length(ft),2));
+    %Acquisition settings - from additional ~1700 bytes
+    ft = fread(fid,'int16=>char')';
+    infoStart = regexp(ft,'--- Acquisition Settings ---','once');
+    infoEnd = regexp(ft,'Inter-Pulse Interval Table Entries\s[\d+]','end','once');
+    meta.Info = ft(infoStart:infoEnd);
     
-    %Define strings for regexp 
-    expEpisodes = '(Episodes\s)(\d+)';
-    expPulses = '(Pulses\s)(\d+)';	
-    expProt = '(\s-?\d?\.?\d+){10,16}';
-
-    %Find number of episodes
-    Episodes = regexp(ft,expEpisodes,'tokens');  
-    meta.nEpisodes = str2double(Episodes{1}(2));
-
-    %Find number of pulses
-    Pulses = regexp(ft,expPulses,'tokens');  
-    meta.nPulses = str2double(Pulses{1}(2));
-
+    meta.Protocol = regexp(meta.Info,'Protocol\s:\s(\w+)\s','tokens','once');
+    
+    %Get acquisition channels
+    meta.Channels = regexp(meta.Info,'Acquisition channels : "(.+)"','tokens','once');
+    
+    %Get number of episodes
+    meta.NumEpisodes = regexp(meta.Info,'Episodes\s(\d+)\s','tokens','once');  
+    meta.NumEpisodes = str2num(meta.NumEpisodes{:});
+   
+    %Get number of pulses
+    meta.NumPulses = regexp(meta.Info,'Pulses\s(\d+)\s','tokens','once');  
+    meta.NumPulses = str2num(meta.NumPulses{:});
+    
     %Get pulse tables for protocol reconstruction
-    meta.Prot = regexp(ft,expProt,'tokens');
-
+    %NOTE: Exact structure and meaning of protocol table unclear
+    expProt = '(\s-?\d?\.?\d+){10,16}';
+    meta.ProtocolTable = regexp(ft,expProt,'tokens');
+    meta.ProtocolTable = cellfun(@(x) str2num(char(x)),meta.ProtocolTable,'UniformOutput',false);
+    
     %Note: Remaining graph formatting information not read.
+    %TODO: Read and parse entire remainder of file
 
     fclose(fid);
 
